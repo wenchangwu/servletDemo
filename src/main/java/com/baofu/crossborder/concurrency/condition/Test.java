@@ -1,30 +1,28 @@
 package com.baofu.crossborder.concurrency.condition;
 
 import java.util.PriorityQueue;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
-/**
- * Description：
- * <p>
- * #
- * </p >
- * User: qingyunzi Date: 17-10-9 ProjectName:servletDemo Version:
- */
 public class Test {
     private int queueSize = 10;
     private PriorityQueue<Integer> queue = new PriorityQueue<Integer>(queueSize);
+    private Lock lock = new ReentrantLock();
+    private Condition notFull = lock.newCondition();
+    private Condition notEmpty = lock.newCondition();
 
     public static void main(String[] args) {
         Test test = new Test();
-        Produce produce = test.new Produce();
-        Consume consume = test.new Consume();
+        Producer producer = test.new Producer();
+        Consumer consumer = test.new Consumer();
 
-        produce.start();
-        consume.start();
-
+        producer.start();
+        consumer.start();
     }
 
+    class Consumer extends Thread {
 
-    class Consume extends Thread {
         @Override
         public void run() {
             consume();
@@ -32,27 +30,28 @@ public class Test {
 
         private void consume() {
             while (true) {
-                synchronized (queue) {
+                lock.lock();
+                try {
                     while (queue.size() == 0) {
                         try {
-                            Thread.sleep(1000);
-                            System.out.println(Thread.currentThread().getName() + " the queue is empty");
-                            queue.wait();
-                        } catch (Exception e) {
+                            System.out.println("队列空，等待数据");
+                            notEmpty.await();
+                        } catch (InterruptedException e) {
                             e.printStackTrace();
-                            queue.notify();
                         }
-
                     }
-                    queue.poll();
-                    queue.notify();
-                    System.out.println("get value from queue,the queue size is :" + queue.size());
+                    queue.poll();                //每次移走队首元素
+                    notFull.signal();
+                    System.out.println("从队列取走一个元素，队列剩余" + queue.size() + "个元素");
+                } finally {
+                    lock.unlock();
                 }
             }
         }
     }
 
-    class Produce extends Thread {
+    class Producer extends Thread {
+
         @Override
         public void run() {
             produce();
@@ -60,20 +59,21 @@ public class Test {
 
         private void produce() {
             while (true) {
-                synchronized (queue) {
+                lock.lock();
+                try {
                     while (queue.size() == queueSize) {
                         try {
-                            Thread.sleep(1000);
-                            System.out.println(Thread.currentThread().getName() + " the queue is full");
-                            queue.wait();
-                        } catch (Exception e) {
+                            System.out.println("队列满，等待有空余空间");
+                            notFull.await();
+                        } catch (InterruptedException e) {
                             e.printStackTrace();
-                            queue.notify();
                         }
                     }
-                    queue.offer(1);
-                    queue.notify();
-                    System.out.println("insert value into queue the size left is :" + (queueSize - queue.size()));
+                    queue.offer(1);        //每次插入一个元素
+                    notEmpty.signal();
+                    System.out.println("向队列取中插入一个元素，队列剩余空间：" + (queueSize - queue.size()));
+                } finally {
+                    lock.unlock();
                 }
             }
         }
